@@ -11,12 +11,15 @@ services:
       - thread_pool.search.queue_size=100000
       - thread_pool.write.queue_size=100000
       - bootstrap.memory_lock=true
-      - xpack.security.enabled=true
-      - ELASTIC_PASSWORD=${elasticsearch_password} # Password for "elastic" default user
-      - ES_JAVA_OPTS=-Xms13G -Xmx13G
+      - xpack.security.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      # remove ELASTIC_PASSWORD if security is off (optional, but cleaner)
+      # - ELASTIC_PASSWORD=${elasticsearch_password}
+      - ES_JAVA_OPTS=-Xms4G -Xmx4G
+      - xpack.ml.enabled=false
     volumes:
-      - ./elasticsearch/data:/usr/share/elasticsearch/data
-      - ./elasticsearch/logs:/usr/share/elasticsearch/logs
+      - esdata:/usr/share/elasticsearch/data
+      - eslogs:/usr/share/elasticsearch/logs
     ulimits:
       nofile:
         soft: 65536
@@ -24,24 +27,17 @@ services:
     deploy:
       resources:
         limits:
-          memory: 14G
+          memory: 10G
           cpus: '8.000'
     memswap_limit: 14G
     networks:
-      - cortex-network
+      - hive-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -s -u 'elastic:${elasticsearch_password}' http://elasticsearch:9200/_cat/health || exit 1"]
-      start_period: 40s
-      interval: 2s
-      timeout: 1s
-      retries: 5
-    labels:
-      com.strangebee.stack: "cortex-stack"
-      com.strangebee.service: "elasticsearch"
-      com.strangebee.role: "indexing"
-      com.strangebee.environment: "testing"
-      com.strangebee.version: "${elasticsearch_image_version}"
-      com.strangebee.dependency: "None"
+      test: ["CMD-SHELL", "curl -f -s http://elasticsearch:9200/_cat/health || exit 1"]
+      start_period: 90s
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   cortex:
     image: "thehiveproject/cortex:${cortex_image_version}"
@@ -65,6 +61,9 @@ services:
       - ./cortex/config:/etc/cortex:ro
       - ./cortex/logs:/var/log/cortex
       - ./cortex/neurons:/opt/cortexneurons
+    
+    ports:
+      - "9001:9001"
     deploy:
       resources:
         limits:
@@ -72,9 +71,8 @@ services:
           cpus: '8.000'
     memswap_limit: 8G
     networks:
-      - cortex-network
-    ports:
-       - "9001:9001"
+      - hive-network
+      
     healthcheck:
       test: ["CMD-SHELL", "curl -s -f http://localhost:9001/api/status || exit 1"]
       start_period: 60s
@@ -102,10 +100,9 @@ services:
     volumes:
       - ./nginx/templates:/etc/nginx/templates  # Custom Nginx configuration
       - ./nginx/certs:/etc/nginx/certs  # Directory for custom certificates
-    ports:
-      - "9443:443"
+    
     networks:
-      - cortex-network
+      - hive-network
     deploy:
       resources:
         limits:
@@ -123,4 +120,9 @@ services:
 
 
 networks:
-  cortex-network:
+  hive-network:
+    external: true
+
+volumes:
+  esdata:
+  eslogs:
